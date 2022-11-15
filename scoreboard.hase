@@ -1,0 +1,1214 @@
+// Project:	CDC 6600
+// Entity:	Scoreboard
+// File:	scoreboard.hase
+// Date:	Sep 2015
+
+
+
+
+$class_decls
+
+ Clock * myClock;
+ istack * myISTACK;
+ d_registers* myDregs;
+ xba_registers* myXBAregs;
+ addU * myADD;
+ mulU * myMUL1;
+ mulU * myMUL2;
+ divU * myDIV;
+ fx_addU * myFX_ADD;
+ incU * myINC1;
+ incU * myINC2;
+ boolU * myBOOL;
+ shiftU * mySHIFT;
+ branchU * myBRANCH;
+
+//structures and variables
+
+  bool Unit_Free, Dest_Free, ops_ready;
+  bool  New_Instrn, Issue_Held, issued, ready, set_scb_ready;
+  bool  i_error, o_error, time_out;
+  bool c_branch, u_branch, k_type, K_type;
+  bool go_store_request, go_store_wait, X_load;
+  bool stopping;
+
+  char  Destination[8], Source1[8], Source2[8], Fw[4], Fx[4];
+  char destT, src1T, src2T;	// destination, source1, source2 reg types
+
+  int F;
+  int clock_cycle, stop_delay;
+  int unit_no, go_store_wait_unit;
+  int dest, src1, src2;		// destination, source1, source2 reg numbers
+  int Xreg_no;
+  int Qi, Qj, Qk, FxQ;			// unit identifier numbers
+  int port_no;
+
+ t_Instrn new_instrn;
+ t_set_Qi set_Qi_pkt;
+ t_set_Qj_Qk set_Qj_Qk_pkt;
+ t_identifiers IDENTS;
+
+void check_Unit_Free();
+void check_Dest_Free();
+void setDesignators ();
+void set_Qj_Qk();
+void set_Qi();
+char* AtoX(char *Fw);
+bool Fw_All_Clear(char *Fw);
+bool Fx_All_Clear(char *Fx);
+
+$class_defs
+
+void scoreboard::check_Unit_Free()
+{							// selects and reserves functional unit, decodes register parameters
+ Unit_Free = false;
+  if (U2.f == 1)							// reserve BOOLEAN unit
+  {
+   if (!myBOOL->Busy)
+    {
+     Unit_Free = true;
+     Qi = 4;
+    }
+  else
+    { 
+      strcpy(CONF1, "BOOL");
+     my_state = S_HELD;
+     dump_state_i();
+    }
+   }									// end of reserve BOOLEAN unit
+
+  if (U2.f == 2)							// reserve SHIFT unit
+  {
+   if (!mySHIFT->Busy)
+    {
+     Unit_Free = true;
+     Qi = 3;
+    }
+  else
+    { 
+      strcpy(CONF1, "SHIFT");
+     my_state = S_HELD;
+     dump_state_i();
+    }
+   }									// end of reserve SHIFT unit
+
+else if ((F == 30) || (F == 31))				// reserve ADD unit
+  {
+   if (!myADD->Busy)
+    {
+     Unit_Free = true;
+     Qi = 15;
+    }
+  else
+    { 
+      strcpy(CONF1, "ADD");
+     my_state = S_HELD;
+     dump_state_i();
+    }
+   }									// end of reserve ADD unit
+
+else if ((F == 03) || (F == 36) || (F == 37))	// reserve  FIXED/LONG ADD unit
+  {
+   if (!myFX_ADD->Busy)
+    {
+     Unit_Free = true;
+     Qi = 14;
+    }
+  else
+    { 
+      strcpy(CONF1, "ADD");
+     my_state = S_HELD;
+     dump_state_i();
+    }
+   }									// end of reserve FIXED/LONG ADD unit
+
+ else if (F == 40)						// reserve MUL1 or MUL2 unit
+  {
+   if(!myMUL1->Busy)
+    {
+     Unit_Free = true;
+     Qi = 6;
+    }
+  else if(!myMUL2->Busy)
+    {
+     Unit_Free = true;
+    Qi = 7;
+    }
+  else
+    { 
+      strcpy(CONF1, "MUL");
+     my_state = S_HELD;
+     dump_state();
+    }
+  }									// end of reserve MUL1 or MUL2 unit
+
+ else if ((F == 44) || (F == 47))				// reserve DIV unit			
+  {
+   if (!myDIV->Busy)
+    {
+     Unit_Free = true;
+     Qi = 5;
+    }
+  else
+    { 
+      strcpy(CONF1, "DIV");
+     my_state = S_HELD;
+     dump_state_i();
+    }
+   }									// end of reserve DIV unit
+
+ else if  ( (U2.f > 4) || (U2.f == 0) )			// reserve INC1 or INC2 unit
+  {
+   if(!myINC1->Busy)
+    {
+     Unit_Free = true;
+     Qi = 1;
+    }
+  else if(!myINC2->Busy)
+    {
+     Unit_Free = true;
+    Qi = 2;
+    }
+  else
+    { 
+      strcpy(CONF1, "INC");
+     my_state = S_HELD;
+     dump_state();
+    }
+  }									// end of reserve INC1 or INC2 unit
+
+}									// end of check_Unit_Free
+
+void scoreboard::check_Dest_Free()
+{
+ Dest_Free = false;
+ if ( ( (destT == 'X') && (myXBAregs->Xreg[dest].Qi == 8) )
+   || ( (destT == 'A') && (myXBAregs->Areg[dest].Qi == 8) && (myXBAregs->Xreg[dest].Qi == 8) )
+   || ( (destT == 'B') && (myXBAregs->Breg[dest].Qi == 8) )
+   || c_branch || u_branch
+    )
+  {Dest_Free = true;
+}
+ else
+   {
+    strcpy(CONF1, Destination);
+    if ( (destT == 'A') && (myXBAregs->Xreg[dest].Qi != 8) )
+     {CONF1[0] = 'X';}
+    my_state = S_HELD;
+    dump_state_i();
+   }
+}
+
+void scoreboard::setDesignators()
+{
+ if (Qi == 1)								// INC unit 1
+  {
+    strcpy(myINC1->IDENTS.m, U2a.function);
+    if (k_type)
+     {
+      strcpy(myINC1->IDENTS.Fi, Destination);
+      strcpy(myINC1->IDENTS.Fj, Source1);
+      strcpy(myINC1->IDENTS.Fk, Source2);
+     }
+    if (K_type) 
+     {
+      strcpy(myINC1->IDENTS.Fi, Destination);
+      strcpy(myINC1->IDENTS.Fj, Source1);
+      strcpy(myINC1->IDENTS.Fk, "K");
+      myINC1->RESULT = U2.k;
+     }
+   if (c_branch)
+    {
+      strcpy(myINC1->IDENTS.Fi, "_");
+      strcpy(myINC1->IDENTS.Fj, Source1);
+      strcpy(myINC1->IDENTS.Fk, Source2);
+      strcpy(myBRANCH->IDENTm, U2a.function);
+      myBRANCH->BRANCH_TO = U2.k;
+      myBRANCH->Busy = true;
+     }
+   if (u_branch)
+    {
+      strcpy(myINC1->IDENTS.Fi, "_");
+      strcpy(myINC1->IDENTS.Fj, Source1);
+      strcpy(myINC1->IDENTS.Fk, "K");
+      myINC1->RESULT = U2.k;
+      strcpy(myBRANCH->IDENTm, U2a.function);
+      myBRANCH->BRANCH_TO = U2.k;
+      myBRANCH->Busy = true;
+     }
+    myINC1->unit_no = Qi;
+    myINC1->Busy = true;
+  }
+ if (Qi == 2)								// INC unit 2
+  {
+   strcpy(myINC2->IDENTS.m, U2a.function);
+    if (k_type)
+     {
+      strcpy(myINC2->IDENTS.Fi, Destination);
+      strcpy(myINC2->IDENTS.Fj, Source1);
+      strcpy(myINC2->IDENTS.Fk, Source2);
+     }
+    if (K_type) 
+     {
+      strcpy(myINC2->IDENTS.Fi, Destination);
+      strcpy(myINC2->IDENTS.Fj, Source1);
+      strcpy(myINC2->IDENTS.Fk, "K");
+      myINC2->RESULT = U2.k;
+     }
+   if (c_branch)
+    {
+      strcpy(myINC2->IDENTS.Fi, "_");
+      strcpy(myINC2->IDENTS.Fj, Source1);
+      strcpy(myINC2->IDENTS.Fk, Source2);
+      strcpy(myBRANCH->IDENTm, U2a.function);
+      myBRANCH->BRANCH_TO = U2.k;
+      myBRANCH->Busy = true;
+    }
+   if (u_branch)
+    {
+      strcpy(myINC2->IDENTS.Fi, "_");
+      strcpy(myINC2->IDENTS.Fj, Source1);
+      strcpy(myINC2->IDENTS.Fk, "K");
+      myINC2->RESULT = U2.k;
+      strcpy(myBRANCH->IDENTm, U2a.function);
+      myBRANCH->BRANCH_TO = U2.k;
+      myBRANCH->Busy = true;
+     }
+   myINC2->unit_no = Qi;
+   myINC2->Busy = true;
+  }
+  if (Qi == 3)								// SHIFT unit
+  {
+   strcpy(mySHIFT->IDENTS.m, U2a.function);
+   strcpy(mySHIFT->IDENTS.Fi, Destination);
+   strcpy(mySHIFT->IDENTS.Fj, Source1);
+   if ((U2.m == 0) || (U2.m == 1))
+    {
+     strcpy(mySHIFT->IDENTS.Fk, "J");
+     mySHIFT->RESULT = (U2.j * 8) + U2.k;
+    }
+   if ((U2.m == 2) || (U2.m == 3))
+    {
+     strcpy(mySHIFT->IDENTS.Fk, Source2);
+    }
+   mySHIFT->unit_no = Qi;
+   mySHIFT->Busy = true;
+  }
+  if (Qi == 4)								// BOOLEAN unit
+  {
+   strcpy(myBOOL->IDENTS.m, U2a.function);
+   strcpy(myBOOL->IDENTS.Fi, Destination);
+   strcpy(myBOOL->IDENTS.Fj, Source1);
+   strcpy(myBOOL->IDENTS.Fk, Source2);
+   myBOOL->unit_no = Qi;
+   myBOOL->Busy = true;
+  }
+if (Qi == 5)								// DIV unit
+  {
+   strcpy(myDIV->IDENTS.m, U2a.function);
+   strcpy(myDIV->IDENTS.Fi, Destination);
+   strcpy(myDIV->IDENTS.Fj, Source1);
+   strcpy(myDIV->IDENTS.Fk, Source2);
+   myDIV->unit_no = Qi;
+   myDIV->Busy = true;
+  }
+ if (Qi == 6)								// MUL unit 1
+  {
+   strcpy(myMUL1->IDENTS.m, U2a.function);
+   strcpy(myMUL1->IDENTS.Fi, Destination);
+   strcpy(myMUL1->IDENTS.Fj, Source1);
+   strcpy(myMUL1->IDENTS.Fk, Source2);
+   myMUL1->unit_no = Qi;
+   myMUL1->Busy = true;
+  }
+ if (Qi == 7)								// MUL unit 2
+  {
+   strcpy(myMUL1->IDENTS.m, U2a.function);
+   strcpy(myMUL2->IDENTS.Fi, Destination);
+   strcpy(myMUL2->IDENTS.Fj, Source1);
+   strcpy(myMUL2->IDENTS.Fk, Source2);
+   myMUL2->unit_no = Qi;
+   myMUL2->Busy = true;
+  }
+ if (Qi == 14)								  // FIXED ADD unit
+  {
+   strcpy(myFX_ADD->IDENTS.m, U2a.function);
+    if (k_type)
+     {
+      strcpy(myFX_ADD->IDENTS.Fi, Destination);
+      strcpy(myFX_ADD->IDENTS.Fj, Source1);
+      strcpy(myFX_ADD->IDENTS.Fk, Source2);
+     }
+   if (c_branch)
+    {
+      strcpy(myFX_ADD->IDENTS.Fi, "_");
+      strcpy(myFX_ADD->IDENTS.Fj, Source1);
+      strcpy(myFX_ADD->IDENTS.Fk, "_");
+      strcpy(myBRANCH->IDENTm, U2a.function);
+      myBRANCH->BRANCH_TO = U2.k;
+      myBRANCH->Busy = true;
+     }
+ 
+   myFX_ADD->unit_no = Qi;
+   myFX_ADD->Busy = true;
+  }
+ if (Qi == 15)								  // ADD unit
+  {
+   strcpy(myADD->IDENTS.m, U2a.function);
+   strcpy(myADD->IDENTS.Fi, Destination);
+   strcpy(myADD->IDENTS.Fj, Source1);
+   strcpy(myADD->IDENTS.Fk, Source2);
+   myADD->unit_no = Qi;
+   myADD->Busy = true;
+  }
+
+}
+
+void scoreboard::set_Qj_Qk()
+{									// causes XBA Registers to send Qj, Qk to functional unit
+  strcpy (set_Qj_Qk_pkt.Src1, Source1);
+  strcpy (set_Qj_Qk_pkt.Src2, Source2);
+  set_Qj_Qk_pkt.Qi = Qi;
+  send_SET_QJ_QK(to_xba_regs, set_Qj_Qk_pkt);
+}
+
+void scoreboard::set_Qi()
+{									// causes Registers to set Qi in destination register
+  strcpy(set_Qi_pkt.Dest, Destination);
+  set_Qi_pkt.Qi = Qi;
+  send_SET_DEST_REG_QI(to_xba_regs, set_Qi_pkt);
+//printf("SCOREBOARD sending set_Qi packet destT = %c, dest = %d, Qi = %d \n", destT, dest, Qi);
+}
+
+char* scoreboard::AtoX(char *Fw)
+{
+  strcpy(Fx, "--");
+  if (strcmp(Fw, "A1") == 0)
+  {strcpy (Fx, "X1");}
+  if (strcmp(Fw, "A2") == 0)
+  {strcpy (Fx, "X2");}
+  if (strcmp(Fw, "A3") == 0)
+  {strcpy (Fx, "X3");}
+  if (strcmp(Fw, "A4") == 0)
+  {strcpy (Fx, "X4");}
+  if (strcmp(Fw, "A5") == 0)
+  {strcpy (Fx, "X5");}
+  if (strcmp(Fw, "A6") == 0)
+  {strcpy (Fx, "X6");}
+  if (strcmp(Fw, "A7") == 0)
+  {strcpy (Fx, "X7");}
+  return Fx;
+}
+
+bool scoreboard::Fw_All_Clear(char *Fw)
+{
+//printf("SCOREBOARD checking for third order Fw conflicts on register %s \n", Fw); 
+     if (
+	 (myADD->ReadFlag_j && (strcmp (Fw, myADD->IDENTS.Fj) == 0) )
+      || (myADD->ReadFlag_k && (strcmp (Fw, myADD->IDENTS.Fk) == 0) ) 
+      || (myMUL1->ReadFlag_j && (strcmp (Fw, myMUL1->IDENTS.Fj) == 0) )
+      || (myMUL1->ReadFlag_k && (strcmp (Fw, myMUL1->IDENTS.Fk) == 0) ) 
+      || (myMUL2->ReadFlag_j && (strcmp (Fw, myMUL2->IDENTS.Fj) == 0) )
+      || (myMUL2->ReadFlag_k && (strcmp (Fw, myMUL2->IDENTS.Fk) == 0) ) 
+      || (myDIV->ReadFlag_j && (strcmp (Fw, myDIV->IDENTS.Fj) == 0) )
+      || (myDIV->ReadFlag_k && (strcmp (Fw, myDIV->IDENTS.Fk) == 0) ) 
+      || (myFX_ADD->ReadFlag_j && (strcmp (Fw, myFX_ADD->IDENTS.Fj) == 0) )
+      || (myFX_ADD->ReadFlag_k && (strcmp (Fw, myFX_ADD->IDENTS.Fk) == 0) ) 
+      || (myINC1->ReadFlag_j && (strcmp (Fw, myINC1->IDENTS.Fj) == 0) )
+      || (myINC1->ReadFlag_k && (strcmp (Fw, myINC1->IDENTS.Fk) == 0) ) 
+      || (myINC2->ReadFlag_j && (strcmp (Fw, myINC2->IDENTS.Fj) == 0) )
+      || (myINC2->ReadFlag_k && (strcmp (Fw, myINC2->IDENTS.Fk) == 0) ) 
+      || (myBOOL->ReadFlag_j && (strcmp (Fw, myBOOL->IDENTS.Fj) == 0) )
+      || (myBOOL->ReadFlag_k && (strcmp (Fw, myBOOL->IDENTS.Fk) == 0) ) 
+      || (mySHIFT->ReadFlag_j && (strcmp (Fw, mySHIFT->IDENTS.Fj) == 0) )
+      || (mySHIFT->ReadFlag_k && (strcmp (Fw, mySHIFT->IDENTS.Fk) == 0) ) 
+     )
+	return false;
+    return true;
+}
+
+bool scoreboard::Fx_All_Clear(char *Fx)
+{									// if Qi in Fx registers is 9,10,11,12 or 13, allow all clear
+  Xreg_no = atoi(Fx+1);
+  FxQ = myXBAregs->Xreg[Xreg_no].Qi;
+  if ( (
+	 (myADD->ReadFlag_j && (strcmp (Fx, myADD->IDENTS.Fj) == 0) )
+      || (myADD->ReadFlag_k && (strcmp (Fx, myADD->IDENTS.Fk) == 0) ) 
+      || (myMUL1->ReadFlag_j && (strcmp (Fx, myMUL1->IDENTS.Fj) == 0) )
+      || (myMUL1->ReadFlag_k && (strcmp (Fx, myMUL1->IDENTS.Fk) == 0) ) 
+      || (myMUL2->ReadFlag_j && (strcmp (Fx, myMUL2->IDENTS.Fj) == 0) )
+      || (myMUL2->ReadFlag_k && (strcmp (Fx, myMUL2->IDENTS.Fk) == 0) ) 
+      || (myDIV->ReadFlag_j && (strcmp (Fx, myDIV->IDENTS.Fj) == 0) )
+      || (myDIV->ReadFlag_k && (strcmp (Fx, myDIV->IDENTS.Fk) == 0) ) 
+      || (myFX_ADD->ReadFlag_j && (strcmp (Fx, myFX_ADD->IDENTS.Fj) == 0) )
+      || (myFX_ADD->ReadFlag_k && (strcmp (Fx, myFX_ADD->IDENTS.Fk) == 0) ) 
+      || (myINC1->ReadFlag_j && (strcmp (Fx, myINC1->IDENTS.Fj) == 0) )
+      || (myINC1->ReadFlag_k && (strcmp (Fx, myINC1->IDENTS.Fk) == 0) ) 
+      || (myINC2->ReadFlag_j && (strcmp (Fx, myINC2->IDENTS.Fj) == 0) )
+      || (myINC2->ReadFlag_k && (strcmp (Fx, myINC2->IDENTS.Fk) == 0) ) 
+      || (myBOOL->ReadFlag_j && (strcmp (Fx, myBOOL->IDENTS.Fj) == 0) )
+      || (myBOOL->ReadFlag_k && (strcmp (Fx, myBOOL->IDENTS.Fk) == 0) ) 
+      || (mySHIFT->ReadFlag_j && (strcmp (Fx, mySHIFT->IDENTS.Fj) == 0) )
+      || (mySHIFT->ReadFlag_k && (strcmp (Fx, mySHIFT->IDENTS.Fk) == 0) ) 
+     ) && !( (FxQ == 9) || (FxQ == 10) || (FxQ == 11) || (FxQ == 12) || (FxQ == 13) )
+   )
+	return false;
+    return true;
+}
+
+$pre
+
+ myClock = (Clock*) sim.get_entity( sim.get_entity_id( "CLOCK" ) );
+ myISTACK = (istack*)sim.get_entity(sim.get_entity_id("I_STACK"));
+ myDregs = (d_registers*)sim.get_entity(sim.get_entity_id("D_REGS"));
+ myXBAregs = (xba_registers*)sim.get_entity(sim.get_entity_id("XBA_REGS"));
+ myADD = (addU*)sim.get_entity(sim.get_entity_id("ADD"));
+ myMUL1 = (mulU*)sim.get_entity(sim.get_entity_id("MUL1"));
+ myMUL2 = (mulU*)sim.get_entity(sim.get_entity_id("MUL2"));
+ myDIV = (divU*)sim.get_entity(sim.get_entity_id("DIV"));
+ myFX_ADD = (fx_addU*)sim.get_entity(sim.get_entity_id("FX_ADD"));
+ myINC1 = (incU*)sim.get_entity(sim.get_entity_id("INC1"));
+ myINC2 = (incU*)sim.get_entity(sim.get_entity_id("INC2"));
+ myBOOL = (boolU*)sim.get_entity(sim.get_entity_id("BOOLEAN"));
+ mySHIFT = (shiftU*)sim.get_entity(sim.get_entity_id("SHIFT"));
+ myBRANCH = (branchU*)sim.get_entity(sim.get_entity_id("BRANCH"));
+
+stopping = false;
+stop_delay = 10;
+Unit_Free = false;
+ops_ready = false;
+New_Instrn = false;
+i_error = false;
+o_error = false;
+time_out = false;
+c_branch = false;
+u_branch = false;
+k_type = false;
+K_type = false;
+Issue_Held = false;
+issued = false;
+ready = true;
+set_scb_ready = false;
+go_store_request = false;
+go_store_wait = false;
+X_load = false;
+
+strcpy(CONF1,"____");
+
+$phase0
+
+// predicates for use in sim_waiting test
+
+  sim_from_port instrn(from_istack);
+  sim_type_p release(REQUEST_RELEASE);
+
+ clock_cycle = myClock->cycle / 2;
+// printf("Clock cycle %d Phase 0\n", clock_cycle);
+  if (clock_cycle > 1500)
+//  if (clock_cycle > 250)
+   {
+    printf("Timeout stopping simulation\n");
+    stopSimulation();
+   }
+
+  if (sim_waiting(ev, instrn) > 0)
+   {
+    sim_hold(1);
+    SIM_CAST(t_Instrn, new_instrn, ev);
+    U2 = new_instrn.instrn;
+    F = (U2.f * 10) + U2.m;
+
+// load AR with assembler code version of instruction
+    c_branch = false;
+    u_branch = false;
+    k_type = false;
+    K_type = false;
+
+  switch (F)
+    {
+     case 00:
+       strcpy (U2a.function, "STOP");
+       strcpy (Destination, "_");
+       strcpy (Source1, "_");
+       strcpy (Source2, "_");
+       break;
+    case 02:
+      strcpy (U2a.function, "GOTO");
+      Destination[0] = '_';
+      Destination[1] = '_';
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.i);
+      strcpy (Source2, "K");
+      u_branch = true;
+      break;
+   case 03:
+       if (U2.i == 0)
+        {strcpy (U2a.function, "GOTOeq");}
+       if (U2.i == 1)
+        {strcpy (U2a.function, "GOTOne");}
+       if (U2.i == 2)
+        {strcpy (U2a.function, "GOTOge");}
+       if (U2.i == 3)
+        {strcpy (U2a.function, "GOTOlt");}
+       if (U2.i > 3)
+        {i_error = true;
+         stopSimulation();}
+       strcpy(Destination, "_");
+       Source1[0] = 'X';
+       Source1[1] = i_to_ch(U2.j);
+       strcpy (Source2, "K");
+       c_branch = true;
+       break;
+
+   case 04:
+       strcpy (U2a.function, "GOTOeq");
+       Destination[0] = '_';
+       Destination[1] = '_';
+       Source1[0] = 'B';
+       Source1[1] = i_to_ch(U2.i);
+       Source2[0] = 'B';
+       Source2[1] =  i_to_ch(U2.j);
+       c_branch = true;
+       break;
+    case 05:
+       strcpy (U2a.function, "GOTOne");
+       Destination[0] = '_';
+       Destination[1] = '_';
+       Source1[0] = 'B';
+       Source1[1] = i_to_ch(U2.i);
+       Source2[0] = 'B';
+       Source2[1] =  i_to_ch(U2.j);
+       c_branch = true;
+       break;
+   case 06:
+       strcpy (U2a.function, "GOTOge");
+       Destination[0] = '_';
+       Destination[1] = '_';
+       Source1[0] = 'B';
+       Source1[1] = i_to_ch(U2.i);
+       Source2[0] = 'B';
+       Source2[1] =  i_to_ch(U2.j);
+       c_branch = true;
+       break;
+   case 07:
+       strcpy (U2a.function, "GOTOlt");
+       Destination[0] = '_';
+       Destination[1] = '_';
+       Source1[0] = 'B';
+       Source1[1] = i_to_ch(U2.i);
+       Source2[0] = 'B';
+       Source2[1] =  i_to_ch(U2.j);
+      c_branch = true;
+      break;
+
+   case 10:
+      strcpy (U2a.function, "TRA");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = '_';
+      Source2[1] = '_';
+      k_type = true;
+      break;
+   case 11:
+      strcpy (U2a.function, "AND");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 12:
+      strcpy (U2a.function, "OR");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 13:
+      strcpy (U2a.function, "XOR");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 14:
+      strcpy (U2a.function, "TRA~");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 15:
+      strcpy (U2a.function, "AND~");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 16:
+      strcpy (U2a.function, "OR~");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 17:
+      strcpy (U2a.function, "XOR~");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+
+   case 20:
+      strcpy (U2a.function, "SHL");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.i);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+   case 21:
+      strcpy (U2a.function, "SHR");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.i);
+      strcpy (Source2, "K");
+      K_type = true;
+     break;
+   case 22:
+      strcpy (U2a.function, "SNL");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.i);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.j);
+      k_type = true;
+      break;
+   case 23:
+      strcpy (U2a.function, "SNR");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.i);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.j);
+      k_type = true;
+      break;
+
+   case 30:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   case 31:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 36:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 37:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+
+    case 40:
+      strcpy (U2a.function, "MUL");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k); 
+      k_type = true;
+      break;
+    case 44:
+      strcpy (U2a.function, "DIV");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k); 
+      k_type = true;
+      break;
+     case 46:
+       strcpy (U2a.function, "PASS");
+       strcpy (Destination, "_");
+       strcpy (Source1, "_");
+       strcpy (Source2, "_");
+       break;
+    case 47:
+      strcpy (U2a.function, "POP");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      strcpy(Source1, "_");
+      Source2[0] = 'X';
+      Source2[1] = i_to_ch(U2.k); 
+      k_type = true;
+      break;
+ 
+   case 50:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'K';
+      Source2[1] = '_';
+      K_type = true;
+      break;
+    case 51:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 52:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 53:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 54:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 55:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 56:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 57:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'A';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+
+    case 60:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+     case 61:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 62:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 63:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 64:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 65:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+     case 66:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 67:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'B';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+
+    case 70:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+     case 71:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 72:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      strcpy (Source2, "K");
+      K_type = true;
+      break;
+    case 73:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'X';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 74:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 75:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'A';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+     case 76:
+      strcpy (U2a.function, "SUM");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+    case 77:
+      strcpy (U2a.function, "DIF");
+      Destination[0] = 'X';
+      Destination[1] = i_to_ch(U2.i);
+      Source1[0] = 'B';
+      Source1[1] = i_to_ch(U2.j);
+      Source2[0] = 'B';
+      Source2[1] = i_to_ch(U2.k);
+      k_type = true;
+      break;
+   }
+  destT = Destination[0];
+  dest = atoi(Destination+1);
+  src1T = Source1[0];
+  src1 = atoi(Source1+1);
+  src2T = Source2[0];
+  src2 = atoi(Source2+1);
+  strcpy (U2a.dest, Destination);
+  strcpy (U2a.src1, Source1);
+  strcpy (U2a.src2, Source2);
+  dump_state_i();
+
+  if ( ((U2.i & -8) > 0) || ((U2.j & -8) > 0) || (k_type && ((U2.k & -8) > 0)) 
+     || ((K_type || c_branch || u_branch) && ((U2.k & -262144) > 0)) )
+  {
+    o_error = true;
+    stopSimulation();
+  }
+
+  if (F == 00)
+   {
+    stopping = true;
+    dump_state();
+   }
+  else if (!is_a_function(F))
+   {
+     i_error = true;
+     stopSimulation();
+   }
+ if (F == 46)
+   {
+    set_scb_ready = true;
+    my_state = S_BUSY;
+    dump_state();
+   }
+ else
+   {
+    New_Instrn = true;
+    ready = false;
+    }
+  }					// end of new instruction
+
+// check function unit and destination register are free 
+
+ if (New_Instrn || Issue_Held) 
+  { 
+   check_Unit_Free();
+   check_Dest_Free();
+
+// check for first order conflicts
+
+   if (Unit_Free && Dest_Free)
+    {
+      sim_hold(1);
+      setDesignators();			// in unit selected by Qi
+      sim_hold(1);
+      set_Qj_Qk();					// causes XBA Registers to send Qj, Qk to functional unit
+      sim_hold(1);
+     if (c_branch || u_branch)
+      {send_BRANCH_TARGET(to_branch, U2.k);}
+     else
+      {set_Qi();} 						// causes XBA_Registers to set Qi in destination register
+      New_Instrn = false;
+     Issue_Held = false;
+     strcpy(CONF1, "____");
+     my_state = S_BUSY;
+     dump_state_i();
+     ready = true;
+     if (!c_branch && !u_branch)					// for branches, scb_ready is set by BRANCH unit
+      {set_scb_ready = true;}
+    }					// end of if (Unit && Destination Free)
+   else
+    {Issue_Held = true;}
+   }					// end of new instruction / issue held
+
+  if (sim_waiting(ev, release) > 0)
+  {
+   SIM_CAST(int, unit_no, ev);
+//   printf("SCOREBOARD getting request release from unit %d\n", unit_no);
+   go_store_request = true;
+   }									// end of REQUEST_RELEASE
+
+  else if (go_store_wait)
+   {
+     go_store_request = true;
+     unit_no = go_store_wait_unit;
+     go_store_wait = false;
+//  printf("SCOREBOARD processing pending request from unit %d\n", unit_no);
+   }
+
+
+ if (go_store_request)
+   {
+// check for third order conflicts, i.e. are there any ReadFlags set for the destination register
+
+    strcpy(Fx, "--");
+    if (unit_no == 1)
+     {strcpy (Fw, myINC1->IDENTS.Fi);
+      strcpy (Fx, AtoX(Fw));}		// destination register 
+  if (unit_no == 2)
+    {strcpy (Fw, myINC2->IDENTS.Fi);
+     strcpy (Fx, AtoX(Fw));}
+  if (unit_no == 4)
+    {strcpy (Fw, myBOOL->IDENTS.Fi);}
+  if (unit_no == 5)
+    {strcpy (Fw, myDIV->IDENTS.Fi);}
+  if (unit_no == 6)
+    {strcpy (Fw, myMUL1->IDENTS.Fi);}
+  if (unit_no == 7)
+    {strcpy (Fw, myMUL2->IDENTS.Fi);}
+  if ((unit_no == 9) || (unit_no == 10))
+    {X_load = true;
+//printf("SCOREBOARD setting X_load for Xreg %d\n", (unit_no - 8)); 
+}
+   if (unit_no == 15)
+    {strcpy (Fw, myADD->IDENTS.Fi);}
+//printf("SCOREBOARD checking for third order conflicts on register %s \n", Fw); 
+
+
+  if ( (Fw_All_Clear(Fw) && Fx_All_Clear(Fx)) || X_load)
+   {
+// send unit_no as release signal to all units -  sets go_store in requesting unit  
+//  frees any second order conflicts waiting on this unit in others
+
+     for (int i=0; i<11; i++)
+      {send_GO_STORE(to_unit[i], unit_no);}
+    go_store_request = false;
+   if (X_load)
+    {X_load = false;}
+    }			// end of All_Clear
+ else
+    {
+     go_store_wait = true;
+     go_store_wait_unit = unit_no;
+    }
+  }
+
+$phase1
+
+//printf("Clock cycle %d Phase 1\n", clock_cycle);
+
+ Max_Time_Left  = Max_Time_Left - 20 ;
+ dump_globals();
+  if (Max_Time_Left <= 0)
+ {
+  time_out = true;
+  stopping = true;
+ }
+
+
+if (set_scb_ready)
+ {
+  send_SET_READY(to_istack, set_scb_ready);
+  set_scb_ready = false;
+ }
+
+if (stopping)
+ {
+  if (    (!myADD->Busy) && (!myMUL1->Busy) && (!myMUL2->Busy) && (!myDIV->Busy) 
+    && (!myINC1->Busy) && (!myINC2->Busy) && (!myBOOL->Busy) && (!mySHIFT->Busy)
+    && (myXBAregs->mem_accesses == 0) )
+   {
+     my_state = S_IDLE;
+     dump_state();
+     sim_hold(5);
+     stopSimulation();
+   }
+ }
+
+$report
+if (i_error)
+ { printf("Simulation stopped: Scoreboard detected an unimplemented function - %d \n", F);}
+
+if (o_error)
+ { printf("Simulation stopped: Scoreboard detected an incorrect i, j, k or K value \n");}
+
+if (time_out)
+ {printf("Simulation stopped: Scoreboard Maximum Time exceeded \n");}
+
+

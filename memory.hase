@@ -1,0 +1,204 @@
+
+// Project:	CDC 6600
+// Entity	Memory
+// File:	memory.hase (mainly copied from the code for the corresponding DLX entity)
+// Date:	Aug 2015
+
+// The Memory Unit contains two RARRAYs: i_mem and d_mem.
+// These are separate because instructions are held in readable (string)
+// form for visualisation purposes.
+// It receives instruction requests from the Instruction Stack
+// and Read/Write requests from the Scratch Pad Registers.
+// Requests are processed in ClockPhase 0 and returned 
+// in a subsequent ClockPhase 1.
+// The 4-clock cycle access time is implemented via a pipeline. This corresponds
+// to a very simplistic implementation of memory interleaving, allowing the memory
+// to handle one access per clock even though the access time is 4 clocks. 
+// To be more realistic, there would need to be checks that successive accesses
+// to the same stack only occur at least 4 clocks apart.
+
+// The Memory Unit checks for invalid access types and invalid addresses.
+// It does not currently prioritise requests.
+// This version updated to include byte address as well as data in each word
+
+$class_decls
+
+  bool i_address_error, d_address_error;
+  bool anyD, anyI, newD, newI;
+
+  int operand;
+  int Mem_Output_Data;
+
+//structures and variables
+  t_mem_i_access InstrMemRequest;
+//  t_Instrn InstrOutputBuffer;
+  t_Dinstrn InstrOutputBuffer;
+//  t_instrn_reg InstrMemBuffer[4];
+  t_Dinstrn_buff InstrMemBuffer[4];
+  t_mem_d_access DataMemRequest;
+  t_data_mem_word DataMemBuffer;
+  t_mem_data_reg DataOutputBuffer[8];
+
+$pre
+
+ anyD = true;
+ newD = false;
+ anyI = false;
+ newI = false;
+ i_address_error = false;
+ d_address_error = false;
+
+  my_state = M_IDLE;
+  dump_state();
+
+ for (int j=3; j>=0; j--)
+  {
+   DataOutputBuffer[j].Q = 8;
+  }
+
+$phase0
+
+// predicates for use in sim_wait tests
+
+ sim_from_port instr_access(from_istack);	    
+ sim_from_port data_access(from_xba_regs);
+
+// PROGRESS PIPELINES AND CHECK FOR VALID REQUESTS
+
+ anyI = false;			// initialise valid instruction request flag
+ anyD = false;		// initialise valid data request flag
+
+ for (int j=3; j>=1; j--)
+  {
+    InstrMemBuffer[j].valid = InstrMemBuffer[j-1].valid;
+    if ((InstrMemBuffer[j-1].valid & 1) == 1)
+     {anyI = true;}	
+    InstrMemBuffer[j].instrn0 = InstrMemBuffer[j-1].instrn0;
+    InstrMemBuffer[j].instrn1 = InstrMemBuffer[j-1].instrn1;
+  }
+
+ for (int j=3; j>=1; j--)
+  {
+   DataOutputBuffer[j].Q = DataOutputBuffer[j-1].Q;
+   if (DataOutputBuffer[j-1].Q != 8)
+    {anyD = true;}
+   DataOutputBuffer[j].data = DataOutputBuffer[j-1].data;
+  }
+
+ InstrMemBuffer[0].valid = 0; // set pipeline 0 stages non-valid -
+ DataOutputBuffer[0].Q = 8; // will be set to a register Q value (!= 8) if there is a request
+
+ if (sim_waiting(instr_access) > 0)
+  {		// instruction request -  access Instruction Memory
+   sim_select(instr_access, ev);
+   SIM_CAST(t_mem_i_access, InstrMemRequest, ev);
+   newI = true;
+//printf("MEMORY getting i request \n");
+   int addr = InstrMemRequest.address;
+   if (addr < 512)
+    {
+      InstrMemBuffer[0].instrn0 = i_mem[addr];
+      InstrMemBuffer[0].instrn1 = i_mem[addr+1];
+      InstrMemBuffer[0].valid = 1;
+		// valid bits are simply copied through to output		<<ALTER
+		// apart from bit 31 which is set to 1 (= Valid in processor)
+
+     if ( (InstrMemBuffer[0].instrn0.f < 0) || (InstrMemBuffer[0].instrn0.f > 80)
+       || (InstrMemBuffer[0].instrn1.f < 0) || (InstrMemBuffer[1].instrn0.f > 80) )
+	{
+	  InstrMemBuffer[0].valid = 0;
+	  stopSimulation(-1);	// unimplemented function
+	 }
+      }
+    else
+      {
+	InstrMemBuffer[0].valid = 0;
+	i_address_error = true;
+        stopSimulation(-1);	// Invalid instruction memory address	
+       }
+  }
+ if (sim_waiting(data_access) > 0)
+  {		// data request -  access Data Memory
+   sim_select(data_access, ev);
+   SIM_CAST(t_mem_d_access, DataMemRequest, ev);
+   newD = true;
+   if (DataMemRequest.type == 'R')		// read request
+    {
+//printf("MEMORY getting Data request\n");
+     if (DataMemRequest.address < 512)
+      {
+	DataMemBuffer.data = d_mem[DataMemRequest.address].data;
+	DataOutputBuffer[0].data = DataMemBuffer.data;
+	DataOutputBuffer[0].Q = DataMemRequest.Q;
+	// valid bits are simply copied through to output
+	// apart from bit 31 which is set to 1 (= Valid in processor)
+       }
+    else
+      {
+	DataMemBuffer.data = 0;
+	d_address_error = true;
+	 stopSimulation(-1);	// Invalid read data memory address
+      }
+  }
+
+ if (DataMemRequest.type == 'W')		// write request
+   {
+//printf("MEMORY getting Write request\n");
+    if (DataMemRequest.address < D_Mem_Size)
+      {
+        DataMemBuffer.data = DataMemRequest.data;
+        d_mem.Update(DataMemRequest.address, DataMemBuffer);
+	DataOutputBuffer[0].data = 0;
+	DataOutputBuffer[0].Q = DataMemRequest.Q;
+
+		// update memory & screen
+     }	// closes valid request
+   else
+    {
+      d_address_error = true;
+      stopSimulation(-1); // Invalid write data memory address
+      }
+    }	// closes write request
+  }	// closes data request
+ if (anyD || newD || anyI || newI)
+  {
+    my_state = M_BUSY;
+    dump_state();
+  }
+ 	// end of ClockPhase 0
+
+$phase1
+
+ if ((InstrMemBuffer[3].valid & 1) == 1)				// send instruction to Instruction Stack
+  {
+   InstrOutputBuffer.instrn0 = InstrMemBuffer[3].instrn0;
+   InstrOutputBuffer.instrn1 = InstrMemBuffer[3].instrn1;
+   send_D_INSTRN(to_istack, InstrOutputBuffer);
+  newI = false;
+  }
+
+  if (DataOutputBuffer[3].Q != 8)						// send data to Registers
+  {
+   if ((DataOutputBuffer[3].Q > 8) && (DataOutputBuffer[3].Q < 14))
+    {send_MEM_DATA(to_d_regs, DataOutputBuffer[3]);}
+   else
+    {sim_schedule(to_d_regs, 0.0, MEM_DATA, SIM_PUT (t_mem_data_reg, DataOutputBuffer[3]));}
+							 // ack to D_REGS for Writes
+   newD = false;
+  }
+
+ if (!anyD && !anyI)
+  {
+   my_state = M_IDLE;
+   dump_state();
+  }
+	// end of ClockPhase 1
+
+$report
+
+  if (i_address_error)
+   {printf("Simulation aborted: invalid instruction memory address\n");}
+
+  if (d_address_error)
+   {printf("Simulation aborted: invalid data memory address\n");}
+

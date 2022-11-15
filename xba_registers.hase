@@ -1,0 +1,201 @@
+
+// Project:	CDC 6600
+// Entity:	XBA_Registers
+// File:	xba_registers.hase
+// Date:	Sep 2015
+//
+
+$class_decls
+
+  int Qi, Qj, Qk;
+  char destT, src1T, src2T;	// destination, source1, source2 reg types
+  int dest, src1, src2;		// destination, source1, source2 reg numbers
+  int port_no, reg_no;
+  int mem_accesses;
+  t_set_Qi set_Qi_pkt;
+  t_set_Qj_Qk set_Qj_Qk_pkt;
+  t_reg_read ReadRequest;
+  t_reg_write WriteRequest;
+  t_data Qvalues, Rvalues;
+  t_prog_reg buffer, Aupdate, Bupdate, Xupdate;
+  t_mem_d_access mem_access;
+  t_mem_data_reg mem_data;
+
+// .vec means update array, but not screen highlighting
+
+$class_defs
+
+
+$body
+
+ mem_accesses = 0;
+ my_state = XBA_REGS_IDLE;
+ dump_state();
+
+while(1)
+{
+  sim_get_next(ev);
+
+  if (ev.type() == SET_QJ_QK)						// sent by scoreboard - sends Qj, Qk to functional unit
+   {
+    sim_hold(1);
+    SIM_CAST(t_set_Qj_Qk, set_Qj_Qk_pkt, ev);
+    src1T = set_Qj_Qk_pkt.Src1[0];
+    src1 = atoi(set_Qj_Qk_pkt.Src1+1);
+    src2T = set_Qj_Qk_pkt.Src2[0];
+    src2 = atoi(set_Qj_Qk_pkt.Src2+1);
+    Qi= set_Qj_Qk_pkt.Qi;
+
+  if (src1T == 'X')
+   {Qvalues.word0 = Xreg[src1].Qi;}
+  else if (src1T == 'A')
+    {Qvalues.word0 = Areg[src1].Qi;}
+  else if (src1T == 'B')
+    {Qvalues.word0 = Breg[src1].Qi;}
+
+  if (src2T == 'X')
+   {Qvalues.word1 = Xreg[src2].Qi;}
+  else if (src2T == 'A')
+    {Qvalues.word1 = Areg[src2].Qi;}
+  else if (src2T == 'B')
+    {Qvalues.word1 = Breg[src2].Qi;}
+  else if ( (src2T == 'J') || (src2T == 'K') )
+    {Qvalues.word1 = 8;}
+  port_no = get_port_no(Qi);
+   send_Q_VALUES(to_unit[port_no], Qvalues);
+//printf("XBA_REGISTERS: sending Q_VALUES to port %d, Qi = %d \n", port_no, Qi);
+   }
+
+   if (ev.type() == SET_DEST_REG_QI)				// sent by scoreboard - sets Qi in destination register
+    {
+     SIM_CAST( t_set_Qi, set_Qi_pkt, ev);
+     destT = set_Qi_pkt.Dest[0];
+     dest = atoi(set_Qi_pkt.Dest+1);
+     Qi = set_Qi_pkt.Qi;
+      if (destT == 'X')
+	{
+	  Xupdate.Qi = Qi;
+	  Xupdate.value = Xreg.vec[dest].value;
+	  Xreg.Update(dest, Xupdate);
+	}
+	else if (destT == 'A')
+	{
+	  Aupdate.Qi = Qi;
+	  Aupdate.value = Areg.vec[dest].value;
+	  Areg.Update(dest, Aupdate);
+          if ((dest > 0) && (dest < 6))
+	   {
+	    Xupdate.value = Xreg[dest].value;
+	    Xupdate.Qi = dest + 8;
+	    Xreg.Update(dest, Xupdate);
+	   }
+	}
+	else if (destT == 'B')
+	{
+	  Bupdate.Qi = Qi;
+	  Bupdate.value = Breg.vec[dest].value;
+	  Breg.Update(dest, Bupdate);
+	}
+   }
+
+  if (ev.type() == REG_READ)
+  {
+    SIM_CAST(t_reg_read, ReadRequest, ev);
+    src1T = ReadRequest.Fj[0];
+    src1 = atoi(ReadRequest.Fj+1);
+    src2T = ReadRequest.Fk[0];
+    src2 = atoi(ReadRequest.Fk+1);
+
+    if (src1T == 'X')
+     {Rvalues.word0 = Xreg[src1].value;}
+    else if (src1T == 'A')
+     {Rvalues.word0 = Areg[src1].value;}
+     else if (src1T == 'B')
+     {Rvalues.word0 = Breg[src1].value;}
+     else if (src1T == '-')
+     {Rvalues.word0 = 0;}
+   if (src2T == 'X')
+     {Rvalues.word1 = Xreg[src2].value;}
+    else if (src2T == 'A')
+     {Rvalues.word1 = Areg[src2].value;}
+     else if (src2T == 'B')
+     {Rvalues.word1 = Breg[src2].value;}
+   else if (src2T == 'K')
+     {Rvalues.word1 = 0;}
+
+  if (ev.from_port(from_unit[0]))
+   {port_no = 0;}
+  if (ev.from_port(from_unit[1]))
+   {port_no = 1; }
+  else if (ev.from_port(from_unit[2]))
+   {port_no = 2; }
+  else if (ev.from_port(from_unit[3]))
+   {port_no = 3; }
+  else if (ev.from_port(from_unit[4]))
+   {port_no = 4; }
+  else if (ev.from_port(from_unit[5]))
+   {port_no = 5; }
+  else if (ev.from_port(from_unit[6]))
+   {port_no = 6; }
+  else if (ev.from_port(from_unit[7]))
+   {port_no = 7; }
+  else if (ev.from_port(from_unit[8]))
+   {port_no = 8; }
+
+   sim_hold(4);
+   send_R_VALUES(to_unit[port_no], Rvalues);			// send packet to functional unit
+//printf("XBA_REGISTERS sending R_VALUES to port %d\n", port_no);
+   }
+
+  if (ev.type() == REG_WRITE)
+  {
+    sim_hold(1);
+    SIM_CAST(t_reg_write, WriteRequest, ev);
+    destT = WriteRequest.Fi[0];
+    dest = atoi(WriteRequest.Fi+1);
+
+    if (destT == 'X')
+     {
+      Xupdate.value = WriteRequest.data;
+      Xupdate.Qi = 8;
+      Xreg.Update(dest, Xupdate);
+     }
+
+    if (destT == 'A')
+     {
+      Aupdate.value = WriteRequest.data;
+      Aupdate.Qi = 8;
+      Areg.Update(dest, Aupdate);
+         if ((dest > 0) && (dest < 6))
+	  {
+	   mem_access.type = 'R';
+	   mem_access.Q = dest + 8;
+	   mem_access.address = Aupdate.value;
+	   mem_access.data = 0;
+	   mem_accesses ++;
+	   send_MEM_D_ACCESS (to_memory, mem_access);
+	  }
+         if ((dest == 6) || (dest == 7))
+	  {
+	   mem_access.type = 'W';
+	   mem_access.Q = dest + 8;
+	   mem_access.address = Aupdate.value;
+	   mem_access.data = Xreg[dest].value;
+	   mem_accesses ++;
+//printf("REGISTERS incrementing mem_accesses, = %d \n", mem_accesses);
+	   send_MEM_D_ACCESS (to_memory, mem_access);
+	  }
+     }
+    if (destT == 'B')
+     {
+      if (dest == 0)
+       {Bupdate.value = 0;}
+     else
+       { Bupdate.value = WriteRequest.data;}
+      Bupdate.Qi = 8;
+      Breg.Update(dest, Bupdate);
+     }
+   }
+}	// closes while
+
+

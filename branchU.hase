@@ -1,0 +1,99 @@
+// Project:	CDC 6600
+// Unit:	Branch Unit
+// File:	branchU.hase
+// Date:	Nov 2015
+
+$class_decls
+
+//entity references
+
+ istack * myISTACK;
+ scoreboard * mySB;
+
+//structures and variables
+
+ bool Busy, ready, zero, neg, jump;
+
+  int unit_no, K, latency, test_result;
+ 
+  t_data input, Operands, Qvalues;
+  t_data branch_result;
+  t_reg_read ReadRequest;
+  t_reg_write WriteRequest;
+  t_unit_data_reg result[15];
+
+//classes
+
+$class_defs
+
+$pre
+
+ myISTACK = (istack*)sim.get_entity(sim.get_entity_id("I_STACK"));
+ mySB = (scoreboard*)sim.get_entity(sim.get_entity_id("SCOREBOARD"));
+
+ Busy = false;
+ latency = 4;
+ my_state = BRANCH_IDLE;
+ dump_state();
+
+ for (int j = 0; j < latency; j++)
+ {result[j].valid = 0;}
+
+$phase0
+
+// predicates for use in sim_waiting test
+
+  sim_from_port data_input1(data_in1);
+  sim_from_port data_input2(data_in2);
+  sim_from_port data_input3(data_in3);
+//  sim_from_port control_input(control_in);
+
+ if (Busy)
+  {
+   my_state = BRANCH_BUSY;
+   dump_state();
+  }
+ if ( (sim_waiting(ev, data_input1) > 0) || (sim_waiting(ev, data_input2) > 0)
+   || (sim_waiting(ev, data_input3) > 0) )
+  {
+   SIM_CAST(int, test_result, ev);				// bit 30 = 0 if +ve bit 31: = 0 if zero
+   ready = true;
+   if ((test_result &1) == 0)
+    {zero =	true;}
+   else
+     {zero = false;}
+   if ((test_result & 2) == 2)
+    {neg = true;}
+   else
+    {neg = false;}
+   jump = false;
+   if  (strcmp (IDENTm,  "GOTO") == 0)
+    {
+     jump = true;
+     BRANCH_TO = test_result;
+    }
+  else if ( (strcmp (IDENTm,  "GOTOeq") == 0) && zero)
+    {jump = true;}
+  else if ( (strcmp (IDENTm,  "GOTOne") == 0) && !zero)
+    {jump = true;}
+  else if ( (strcmp (IDENTm,  "GOTOge") == 0) && (zero || !neg) )
+    {jump = true;}
+  else if ( (strcmp (IDENTm,  "GOTOlt") == 0) && !zero && neg)
+    {jump = true;}
+    }
+		  // end of ClockPhase 0
+
+$phase1
+
+ if (ready)
+  {
+   branch_result.word0 = jump;
+   branch_result.word1 = BRANCH_TO;
+   send_BRANCH_RESULT(output, branch_result);
+   ready = false;
+   Busy = false;
+   my_state = BRANCH_IDLE;
+   dump_state();
+  }
+
+		// end of Clockphase 1

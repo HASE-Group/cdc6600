@@ -1,0 +1,211 @@
+// Project:	CDC 6600
+// Unit:	Divide Unit
+// File:	divU.hase
+// Date:	Nov 2015
+
+// The latency value in the Divide Unit depends on the function, 14 for DIV, 7 for POP
+
+$class_decls
+
+//entity references
+
+ scoreboard * mySB;
+
+//structures and variables
+
+ bool Busy, ReadFlag_j, ReadFlag_k, conflict2;
+ bool go_store, go_store_wait;
+
+  int unit_no, latency, Q;
+  int pop_count, temp;
+ 
+  t_data input, Operands, Qvalues;
+  t_reg_read ReadRequest;
+  t_reg_write WriteRequest;
+  t_unit_data_reg result[15];
+
+//classes
+
+$class_defs
+
+$pre
+
+ mySB = (scoreboard*)sim.get_entity(sim.get_entity_id("SCOREBOARD"));
+
+ ReadFlag_j = false;
+ ReadFlag_k = false;
+ Busy = false;
+ latency = 14;
+ my_state = DIV_IDLE;
+ dump_state();
+
+ for (int j = 0; j < latency; j++)
+ {result[j].valid = 0;}
+
+go_store = false;
+go_store_wait = false;
+
+$phase0
+
+// predicates for use in sim_waiting test
+
+  sim_from_port data_input(data_in);
+  sim_from_port control_input(control_in);
+
+// move result through virtual pipeline used to model latency
+ for (int j = (latency-1); j>=1; j--)
+ {result[j] = result[j-1];}
+  result[0].data = 0;
+  result[0].valid = 0;
+
+
+ if (sim_waiting(ev, data_input) > 0)
+  {
+   SIM_CAST(t_data, Operands, ev);
+   DATA1 = Operands.word0;
+   DATA2 = Operands.word1;
+   dump_state();
+  if  (strcmp (IDENTS.m,  "DIV") == 0)
+   {
+    result[0].data = DATA1 / DATA2;
+    latency = 15;
+   }
+  if  (strcmp (IDENTS.m,  "POP") == 0)
+   {
+    pop_count = 0;
+   temp = DATA2;
+    for (int i = 0; i < 32; i++)
+     {
+      pop_count = pop_count + (temp &1);
+      temp = temp >> 1;
+     }
+    result[0].data = pop_count;
+    latency = 7;
+   }
+   result[0].valid = 1;
+  }
+		  // end of ClockPhase 0
+
+$phase1
+
+ sim_from_port data_input(data_in);
+ sim_from_port control_input(control_in);
+
+ if (sim_waiting(ev, data_input) > 0)
+  {
+   if (ev.type() == Q_VALUES)
+   {
+    SIM_CAST(t_data, Qvalues, ev);
+    IDENTS.Qj = Qvalues. word0;
+    IDENTS.Qk = Qvalues. word1;
+
+// check for second order conflicts
+
+    if ( (IDENTS.Qj != 8) && (IDENTS.Qk != 8) )
+     {
+      ReadFlag_j = false;
+      ReadFlag_k = false;
+      conflict2 = true;
+      strcpy(CONF2.j, IDENTS.Fj);
+      strcpy(CONF2.k, IDENTS.Fk);
+     }
+    else if ( (IDENTS.Qj == 8) && (IDENTS.Qk != 8) )
+     {
+      ReadFlag_j = true;
+      ReadFlag_k = false;
+      conflict2 = true;
+      strcpy(CONF2.k, IDENTS.Fk);
+     }
+    else if ( (IDENTS.Qj != 8) && (IDENTS.Qk == 8) )
+     {
+      ReadFlag_j = false;
+      ReadFlag_k = true;
+      conflict2 = true;
+      strcpy(CONF2.j, IDENTS.Fj);
+     }
+    else
+     {
+      ReadFlag_j = true;
+      ReadFlag_k = true;
+     }
+
+    if (ReadFlag_j && ReadFlag_k)
+     {
+       strcpy(ReadRequest.Fj,  IDENTS.Fj);
+       strcpy(ReadRequest.Fk, IDENTS.Fk);
+       send_REG_READ(data_out, ReadRequest);
+       ReadFlag_j = false;
+       ReadFlag_k = false;
+       my_state = DIV_BUSY;
+      }
+     else
+      {my_state = DIV_HELD;}
+    dump_state();
+   }				// end of Q_VALUES
+ }
+
+ if (sim_waiting(ev, control_input) > 0)
+ {
+  if (ev.type() == GO_STORE)
+   {
+    SIM_CAST(int, Q, ev);
+// printf("DIV getting GO_STORE, Q = %d \n", Q);
+    if (Q == unit_no)
+     {go_store = true;}
+    if (Q == IDENTS.Qj)
+     {
+      IDENTS.Qj = 8;
+      ReadFlag_j = true;
+      strcpy(CONF2.j, "__");
+     }
+    if (Q == IDENTS.Qk)
+     {
+      IDENTS.Qk = 8;
+      ReadFlag_k = true;
+      strcpy(CONF2.k, "__");
+      }
+
+    if (ReadFlag_j && ReadFlag_k && conflict2)
+      {
+       conflict2 = false;
+       ReadFlag_j = false;
+       ReadFlag_k = false;
+       strcpy(ReadRequest.Fj,  IDENTS.Fj);
+       strcpy(ReadRequest.Fk, IDENTS.Fk);
+       sim_hold(5);									//  to allow time for register to have been updated
+       send_REG_READ(data_out, ReadRequest);
+// printf("DIV sending ReadRequest to Registers\n");
+       my_state = DIV_BUSY;
+      }
+   }
+       dump_state_i();
+  }				// end of ev
+
+
+ if (result[latency - 1].valid == 1)
+  {
+    {RESULT = result[latency - 1].data;}
+    strcpy (CONF3, IDENTS.Fi);
+    my_state = DIV_HELD;
+    dump_state_i();
+    send_REQUEST_RELEASE(control_out, unit_no);
+// printf("DIV sending request_release to SCBD, result = %d \n", RESULT);
+    go_store_wait = true;
+    sim_hold(2);
+  }
+
+if (go_store_wait && go_store)
+ {
+  strcpy(WriteRequest.Fi, IDENTS.Fi);
+   WriteRequest.data = RESULT;
+   send_REG_WRITE (data_out, WriteRequest);
+   go_store = false;
+   go_store_wait = false;
+   sim_hold(1);
+   Busy = false;
+   strcpy(CONF3, "__");
+   my_state = DIV_IDLE;
+   dump_state_i();
+}
+
+		// end of Clockphase 1

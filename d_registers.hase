@@ -1,0 +1,105 @@
+
+// Project:	CDC 6600
+// Entity:	D Registers
+// File:	d_registers.hase
+// Date:	Nov 2015
+//
+/
+
+$class_decls
+
+ xba_registers* myXBAregs;
+
+  bool Busy, go_store, go_store_wait;
+  char Fx[4];
+  int Q, unit_no;
+  int port_no, reg_no;
+  int mem_accesses;
+  t_set_Qi set_Qi_pkt;
+  t_set_Qj_Qk set_Qj_Qk_pkt;
+  t_reg_read ReadRequest;
+  t_reg_write WriteRequest;
+  t_data Qvalues, Rvalues;
+
+  t_prog_reg buffer, Dupdate;
+  t_mem_data_reg mem_data;
+
+
+$body
+
+ myXBAregs = (xba_registers*)sim.get_entity(sim.get_entity_id("XBA_REGS"));
+
+ Busy = false;
+ go_store = false;
+ go_store_wait = false;
+ my_state = D_REGS_IDLE;
+ dump_state();
+
+while(1)
+{
+  sim_get_next(ev);
+
+  if (ev.type() == MEM_DATA)
+   {
+    sim_hold(1);
+    SIM_CAST(t_mem_data_reg, mem_data, ev);
+    Busy = true;
+    Dupdate.value = mem_data.data;
+    Dupdate.Qi = mem_data.Q;
+    unit_no = mem_data.Q;
+    reg_no = mem_data.Q - 8;
+    if (reg_no > 5)
+     {
+      myXBAregs-> mem_accesses --;
+     }
+    else
+      {
+    Dreg.Update(reg_no, Dupdate);
+    if (unit_no == 9)
+     {strcpy(Fx, "X1");}
+    if (unit_no == 10)
+     {strcpy(Fx, "X2");}
+    if (unit_no == 11)
+     {strcpy(Fx, "X3");}
+    if (unit_no == 12)
+     {strcpy(Fx, "X4");}
+    if (unit_no == 13)
+     {strcpy(Fx, "X5");}
+    strcpy (CONF3, Fx);
+    my_state = D_REGS_HELD;
+    dump_state();
+    sim_hold(5);
+    send_REQUEST_RELEASE(control_out, unit_no);
+    go_store_wait = true;
+      }
+   }
+
+  if (ev.type() == GO_STORE)
+   {
+    SIM_CAST(int, Q, ev);
+    if (Busy && (Q == unit_no))
+     {go_store = true;}
+  }				// end of ev
+
+if (go_store_wait && go_store)
+ {
+   WriteRequest.data = Dreg[unit_no - 8].value;
+   strcpy(WriteRequest.Fi, Fx);
+   send_REG_WRITE (data_out, WriteRequest);
+   myXBAregs-> mem_accesses --;
+   sim_hold(5);
+   Dupdate.Qi = 8;
+   Dreg.Update(reg_no, Dupdate);
+   go_store = false;
+   go_store_wait = false;
+   sim_hold(1);
+   Busy = false;
+   my_state = D_REGS_IDLE;
+   strcpy(CONF3, "__");
+   dump_state();
+}
+
+
+}	// closes while
+
+
