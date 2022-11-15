@@ -170,7 +170,7 @@ $phase1
        strcpy(ReadRequest.Fk, IDENTS.Fk);
        sim_hold(5);									//  to allow time for register to have been updated
        send_REG_READ(data_out, ReadRequest);
-// printf("SHIFT sending ReadRequest to Registers for %s \n", ReadRequest.Fj);
+ //printf("SHIFT sending ReadRequest to Registers for %s \n", ReadRequest.Fj);
        my_state = SHIFT_BUSY;
       }
    }
