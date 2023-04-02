@@ -1,0 +1,91 @@
+// Project	CDC 6600
+// Entity	PROGRAMS
+// File	programs.hase, modified version of Cray-1 programs.hase
+// Date	Mar 2023
+
+/*
+In V3 of the CDC 6600 model, the PROGRAMS entity contains all 3 of the programs in V1.1, and V1.2.
+Its Program parameter selects the base address in the PROGRAMS .mem files  from which the code
+and data are copied into the arrays in MEMORY. PROGRAMS can accommodate 4 programs.
+*/
+
+$class_decls
+
+// Variable Declarations
+
+ memory * myMemory;
+
+ bool coding_error, P_error;
+ int base;						// base address of code and data .mem files
+ int i;	
+ int error_line;
+ t_6600_instrn instrn;
+
+$class_defs
+
+$pre
+
+ myMemory = (memory*)sim.get_entity(sim.get_entity_id("CENTRAL_STORAGE"));
+  coding_error = false;
+  P_error = false;
+
+// mem_address = 0;
+
+ if ( (Program <1) || (Program > 4) )
+  {P_error = true;}
+
+ switch (Program)
+   {
+    case 1:
+      base = 0;		// instructions 0-255 in PROGRAMS.prog_mem.mem
+      break;
+
+    case 2:
+      base = 256;	// instructions 256-511 in PROGRAMS.prog_mem.mem
+      break;
+
+    case 3:
+      base = 512;	// instructions 512-767 in PROGRAMS.prog_mem.mem
+      break;
+
+    case 4:
+      base = 768;	// instructions 768-1023 in PROGRAMS.prog_mem.mem;
+      break;
+   }
+
+// copy instructions to Central Storage
+
+ for (i=0; i<256; i++)
+  { 
+    instrn = i_mem[base + i];
+    if (
+	(instrn.f < 0 || instrn.f > 7) || (instrn.m < 0 || instrn.m > 7) ||
+	(instrn.i < 0 || instrn.i > 7) || (instrn.j < 0 || instrn.j > 7) 
+	)
+     {
+	coding_error = true;
+	error_line = i;
+	stopSimulation();
+     }
+    else
+     {myMemory->i_mem.Update(i, instrn); }
+   }
+// copy data to Central Storage
+
+ for (i = 0; i<256; i++)
+  { myMemory->d_mem.Update(i, d_mem[base + i]); } 
+
+$phase0
+
+ if (P_error || coding_error)
+  {stopSimulation();}
+
+$phase1
+
+$report
+
+ if (coding_error)
+  {printf("coding error on line %d: instruction fields must be in the range 0-7 \n", error_line);}
+
+if (P_error)
+  {printf(" Program number must be 1, 2, 3 or 4\n");} 

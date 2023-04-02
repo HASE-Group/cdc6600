@@ -1,0 +1,198 @@
+title : position (20,20)
+
+CLOCK : position (600,390)
+CPHASE : position (600,390)
+CPHASE : STATES S:ClockS P0:ClockP0 P1:ClockP1
+CPHASE : PARAM cycle MODE VALUE POSITION (70,35)
+
+PROGRAMS : position (5, 80)
+PROGRAMS : port prog_output side BOTTOM position 65
+PROGRAMS : port data_output side BOTTOM position 65
+
+CENTRAL_STORAGE : position (5,150)
+CENTRAL_STORAGE : STATES M_IDLE:store M_BUSY:store_busy
+CENTRAL_STORAGE : port prog_input side TOP position 65 ICON portd
+CENTRAL_STORAGE : port data_input side TOP position 65 ICON portd
+CENTRAL_STORAGE : port from_istack side BOTTOM position 60 ICON portu
+CENTRAL_STORAGE : port to_istack side BOTTOM position 75
+CENTRAL_STORAGE : port to_d_regs side RIGHT position 15
+CENTRAL_STORAGE : port from_xba_regs side RIGHT position 85 ICON portl
+
+I_STACK : position (5,310)
+I_STACK : STATES IS_IDLE:i_stack IS_BUSY:i_stack_busy IS_HELD:i_stack_held
+I_STACK : port to_memory side TOP position 60
+I_STACK : port from_memory side TOP position 75 ICON portd
+I_STACK : port to_scboard side RIGHT position 55
+I_STACK : port from_scboard side RIGHT position 55 ICON portblank
+I_STACK : port to_xba_regs side RIGHT position 0 ICON portblank
+I_STACK : port from_branch side BOTTOM position 65 ICON portu
+
+SCOREBOARD : position (260,310)
+SCOREBOARD : STATES S_IDLE:scb S_BUSY:scb_busy S_HELD:scb_held
+SCOREBOARD : PARAM U2 MODE VALUE POSITION (40,43)
+SCOREBOARD : PARAM U2a MODE VALUE POSITION (24,72)
+SCOREBOARD : PARAM CONF1  MODE VALUE POSITION (55,98)
+SCOREBOARD : port from_istack side LEFT position 55 ICON portr
+SCOREBOARD : port to_istack side LEFT position 55 ICON portblank
+SCOREBOARD : port to_xba_regs side TOP position 70
+SCOREBOARD : port to_unit0 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit0 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit1 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit1 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit2 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit2 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit3 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit3 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit4 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit4 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit5 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit5 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit6 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit6 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit7 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit7 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit8 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit8 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_unit10 side RIGHT position 0 ICON portblank
+SCOREBOARD : port from_unit10 side RIGHT position 0 ICON portblank
+SCOREBOARD : port to_branch side RIGHT position 0 ICON portblank
+
+D_REGS : position (180, 80)
+D_REGS : STATES D_REGS_IDLE:d_regs D_REGS_HELD:d_regs_held
+D_REGS : PARAM CONF3  MODE VALUE POSITION (13,13)
+D_REGS : port from_memory side LEFT position 85 ICON portr
+D_REGS : port data_out side RIGHT position 85
+D_REGS : port control_in side RIGHT position 0 ICON portblank
+D_REGS : port control_out side RIGHT position 0 ICON portblank
+
+
+XBA_REGS : position (260,150)
+XBA_REGS : STATES XBA_REGS_IDLE:xba_regs XBA_REGS_WRITE:xba_regs_write XBA_REGS_READ:xba_regs_read
+XBA_REGS : port from_scboard side BOTTOM position 70 ICON portu
+XBA_REGS : port from_istack side BOTTOM position 0 ICON portblank
+XBA_REGS : port from_d_regs side LEFT position 15 ICON portr
+XBA_REGS : port to_memory side LEFT position 85
+XBA_REGS : port to_unit0 side RIGHT position 5
+XBA_REGS : port from_unit0 side TOP position 110 ICON portd
+XBA_REGS : port to_unit1 side RIGHT position 15
+XBA_REGS : port from_unit1 side TOP position 100 ICON portd
+XBA_REGS : port to_unit2 side RIGHT position 25
+XBA_REGS : port from_unit2 side TOP position 90 ICON portd
+XBA_REGS : port to_unit3 side RIGHT position 35
+XBA_REGS : port from_unit3 side TOP position 80 ICON portd
+XBA_REGS : port to_unit4 side RIGHT position 45
+XBA_REGS : port from_unit4 side TOP position 70 ICON portd
+XBA_REGS : port to_unit5 side RIGHT position 55
+XBA_REGS : port from_unit5 side TOP position 60 ICON portd
+XBA_REGS : port to_unit6 side RIGHT position 65
+XBA_REGS : port from_unit6 side TOP position 50 ICON portd
+XBA_REGS : port to_unit7 side RIGHT position 75
+XBA_REGS : port from_unit7 side TOP position 40 ICON portd
+XBA_REGS : port to_unit8 side RIGHT position 85
+XBA_REGS : port from_unit8 side TOP position 30 ICON portd
+--XBA_REGS : port to_unit9 side RIGHT position 95
+
+ADD : position (480,60)
+ADD : STATES ADD_IDLE:add ADD_BUSY:add_busy ADD_HELD:add_held
+ADD : PARAM CONF2  MODE VALUE POSITION (8,13)
+ADD : PARAM CONF3  MODE VALUE POSITION (158,13)
+ADD : port data_in side LEFT position 15 ICON portr
+ADD : port data_out side RIGHT position 15
+ADD : port control_in side LEFT position 0 ICON portblank
+ADD : port control_out side LEFT position 0 ICON portblank
+
+MUL1 : position (480,90)
+MUL1 : STATES MUL_IDLE:mult MUL_BUSY:mult_busy MUL_HELD:mult_held
+MUL1 : PARAM CONF2  MODE VALUE POSITION (8,13)
+MUL1 : PARAM CONF3  MODE VALUE POSITION (158,13)
+MUL1 : port data_in side LEFT position 15 ICON portr
+MUL1 : port data_out side RIGHT position 15
+MUL1 : port control_in side LEFT position 0 ICON portblank
+MUL1 : port control_out side LEFT position 0 ICON portblank
+
+MUL2 : position (480,120)
+MUL2 : STATES MUL_IDLE:mult MUL_BUSY:mult_busy MUL_HELD:mult_held
+MUL2 : PARAM CONF2  MODE VALUE POSITION (8,13)
+MUL2: PARAM CONF3  MODE VALUE POSITION (158,13)
+MUL2 : port data_in side LEFT position 15 ICON portr
+MUL2 : port data_out side RIGHT position 15
+MUL2 : port control_in side LEFT position 0 ICON portblank
+MUL2 : port control_out side LEFT position 0 ICON portblank
+
+DIV : position (480,150)
+DIV : STATES DIV_IDLE:div DIV_BUSY:div_busy DIV_HELD:div_held
+DIV : PARAM CONF2  MODE VALUE POSITION (8,13)
+DIV : PARAM CONF3  MODE VALUE POSITION (158,13)
+DIV : port data_in side LEFT position 15 ICON portr
+DIV : port data_out side RIGHT position 15
+DIV : port control_in side LEFT position 0 ICON portblank
+DIV : port control_out side LEFT position 0 ICON portblank
+
+FX_ADD : position (480,180)
+FX_ADD : STATES FX_ADD_IDLE:fx_add FX_ADD_BUSY:fx_add_busy FX_ADD_HELD:fx_add_held
+FX_ADD : PARAM CONF2 MODE VALUE POSITION (8,13)
+FX_ADD : PARAM CONF3  MODE VALUE POSITION (158,13)
+FX_ADD : port data_in side LEFT position 15 ICON portr
+FX_ADD : port data_out side RIGHT position 15
+FX_ADD : port control_in side LEFT position 0 ICON portblank
+FX_ADD : port control_out side LEFT position 0 ICON portblank
+FX_ADD: port to_branch side RIGHT position 15
+
+INC1 : position (480,210)
+INC1 : STATES INC_IDLE:inc INC_BUSY:inc_busy INC_HELD:inc_held
+INC1 : PARAM CONF2  MODE VALUE POSITION (8,13)
+INC1 : PARAM CONF3  MODE VALUE POSITION (158,13)
+INC1 : port data_in side LEFT position 15 ICON portr
+INC1 : port data_out side RIGHT position 15
+INC1 : port control_in side LEFT position 0 ICON portblank
+INC1 : port control_out side LEFT position 0 ICON portblank
+INC1: port to_branch side RIGHT position 15
+
+INC2 : position (480,240)
+INC2 : STATES INC_IDLE:inc INC_BUSY:inc_busy INC_HELD:inc_held
+INC2 : PARAM CONF2  MODE VALUE POSITION (8,13)
+INC2 : PARAM CONF3  MODE VALUE POSITION (158,13)
+INC2 : port data_in side LEFT position 15 ICON portr
+INC2 : port data_out side RIGHT position 15
+INC2 : port control_in side LEFT position 0 ICON portblank
+INC2 : port control_out side LEFT position 0 ICON portblank
+INC2: port to_branch side RIGHT position 15
+
+BOOLEAN : position (480,270)
+BOOLEAN : STATES BOOL_IDLE:bool BOOL_BUSY:bool_busy BOOL_HELD:bool_held
+BOOLEAN : PARAM CONF2  MODE VALUE POSITION (8,13)
+BOOLEAN : PARAM CONF3  MODE VALUE POSITION (158,13)
+BOOLEAN : port data_in side LEFT position 15 ICON portr
+BOOLEAN : port data_out side RIGHT position 15
+BOOLEAN : port control_in side LEFT position 0 ICON portblank
+BOOLEAN : port control_out side LEFT position 0 ICON portblank
+
+SHIFT : position (480,300)
+SHIFT : STATES SHIFT_IDLE:shift SHIFT_BUSY:shift_busy SHIFT_HELD:shift_held
+SHIFT : PARAM CONF2  MODE VALUE POSITION (8,13)
+SHIFT : PARAM CONF3  MODE VALUE POSITION (158,13)
+SHIFT : port data_in side LEFT position 15 ICON portr
+SHIFT : port data_out side RIGHT position 15
+SHIFT : port control_in side LEFT position 0 ICON portblank
+SHIFT : port control_out side LEFT position 0 ICON portblank
+
+BRANCH : position (480,330)
+BRANCH : STATES BRANCH_IDLE:branch BRANCH_BUSY:branch_busy BRANCH_HELD:branch_held
+BRANCH : port data_in1 side RIGHT position 15 ICON portl
+BRANCH : port data_in2 side RIGHT position 25 ICON portl
+BRANCH : port data_in3 side RIGHT position 5 ICON portl
+BRANCH : port output side BOTTOM position 70
+
+TOPLEVEL : LINKCORNER ADD data_out XBA_REGS from_unit0 3(5,0) (5,-25) (-296,-25)
+TOPLEVEL : LINKCORNER MUL1 data_out XBA_REGS from_unit1 3(10,0) (10,-60) (-306,-60)
+TOPLEVEL : LINKCORNER MUL2 data_out XBA_REGS from_unit2 3(15,0) (15,-95) (-316,-95)
+TOPLEVEL : LINKCORNER DIV data_out XBA_REGS from_unit3 3(20,0) (20,-130) (-326,-130)
+TOPLEVEL : LINKCORNER FX_ADD data_out XBA_REGS from_unit4 3(25,0) (25,-165) (-336,-165)
+TOPLEVEL : LINKCORNER FX_ADD to_branch BRANCH data_in3 2(10,0) (10,140)
+TOPLEVEL : LINKCORNER INC1 data_out XBA_REGS from_unit5 3(30,0) (30,-200) (-346,-200)
+TOPLEVEL : LINKCORNER INC1 to_branch BRANCH data_in1 2(15,0) (15,120)
+TOPLEVEL : LINKCORNER INC2 data_out XBA_REGS from_unit6 3(35,0) (35,-235) (-356,-235)
+TOPLEVEL : LINKCORNER INC2 to_branch BRANCH data_in2 2(20,0) (20,100)
+TOPLEVEL : LINKCORNER BOOLEAN data_out XBA_REGS from_unit7 3(40,0) (40,-270) (-366,-270)
+TOPLEVEL : LINKCORNER SHIFT data_out XBA_REGS from_unit8 3(45,0) (45,-305) (-376,-305)
+TOPLEVEL : LINKCORNER BRANCH output I_STACK from_branch 2(0,80) (-480,80)

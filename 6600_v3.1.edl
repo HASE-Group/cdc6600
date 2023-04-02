@@ -1,0 +1,570 @@
+PROJECT (
+PREAMBLE (
+	NAME "CDC6600"
+	AUTHOR "Roland Ibbett"
+	VERSION 3.1	
+	DESCRIPTION "CDC 6600"
+)
+
+PARAMLIB (
+-- definition of error description word array
+	ARRAY (string_array, String);
+
+-- DEFINITION OF INSTRUCTION SET
+
+	STRUCT (t_registers, [RINT(i, 0),
+			RINT (j, 0),
+			RINT (k, 0)]);
+
+-- Definition of instruction set
+
+	STRUCT (t_6600_instrn, [RINT (f, 0),
+			RINT (m, 0),
+			RINT (i, 0),
+			RINT (j, 0),
+			RINT (k, 0)]);
+
+	STRUCT (t_Instrn, [RSTRUCT(t_6600_instrn, instrn)]);
+
+	STRUCT (t_Dinstrn, [
+				RSTRUCT(t_6600_instrn, instrn0),
+				RSTRUCT(t_6600_instrn, instrn1)]);
+
+	STRUCT (t_assem, [RSTRING(function, "--"),	-- used to display instruction in assembly code format
+			RSTRING(dest, "--"),
+			RSTRING(src1, "--"),
+			RSTRING(src2, "--")]);
+
+
+-- The 6600 uses Q designators to identify the source of a pending result, as listed below.
+-- Each X, A and B register has a Qi
+-- Each functional unit has a Qj and a Qk designator field
+--
+--  Designator 				Functional Unit
+--     (octal)		(decimal)	
+--	00			0			Branch
+--	01			1			Increment 1
+--	02			2			increment 2
+--	03			3			Shift
+--	04			4			Boolean
+--	05			5			Divide
+--	06			6			Multiply 1
+--	07			7			Multiply 2
+--	10			8			no result pending
+--	11			9			Read Storage Channel 1
+--	12			10			Read Storage Channel 2
+--	13			11			Read Storage Channel 3
+--	14			12			Read Storage Channel 4
+--	15			13			Read Storage Channel 5
+--	16			14			Fixed Add
+--	17			15			Add
+
+-- definition of instruction register/packet
+
+	STRUCT (t_instrn_reg, [RINT(valid, 0),
+				RSTRUCT(t_6600_instrn, instrn)]);
+
+	STRUCT (t_Dinstrn_reg, [RSTRUCT(t_6600_instrn, instrn0),
+			RCHAR (sep,'_'),
+			RSTRUCT(t_6600_instrn, instrn1)]);
+
+	STRUCT (t_Dinstrn_buff, [RINT(valid,0),
+			RSTRUCT(t_6600_instrn, instrn0),
+			RSTRUCT(t_6600_instrn, instrn1)]);
+
+	STRUCT (t_dbl_reg0, [RINT (word0, 0),
+			RCHAR (sep,'_'),
+			RINT (word1, 0)]);
+
+	STRUCT (t_identifiers, [ RSTRING (m, "--"),
+			RSTRING (Fi, "--"),
+			RSTRING (Fj,"--"),
+			RSTRING (Fk,"--"),
+			RINT (Qj, 8),
+			RINT (Qk, 8)]);
+
+-- definition of instruction memory array
+	ARRAYI (instr_mem_array, t_6600_instrn);
+
+-- definition of instruction stack array
+--	ARRAY (instr_stack_array, t_6600_instrn);
+	ARRAY (instr_stack_array, t_Dinstrn);
+
+-- definition of data memory word
+	STRUCT (t_data_mem_word, [RINT(data, 0)]);
+
+-- definition of data memory array
+	ARRAY (data_mem_array, t_data_mem_word);
+
+-- definition of instruction memory access packet
+	STRUCT (t_mem_i_access, [RINT(address, 0)]);
+
+-- definition of data memory access packet
+	STRUCT (t_mem_d_access, [RCHAR(type, '-'),
+				 RINT(Q, 0),
+				 RINT(address, 0),
+				 RINT(data, 0)]);
+
+-- definition of programmable register
+	STRUCT (t_prog_reg, [RINT(value, 0),
+				  RINT(Qi, 0)]);
+
+-- definition of programmable register set
+	ARRAY (prog_reg_set, t_prog_reg);
+
+-- definition of programmable register access packets
+	STRUCT (t_reg_read, [RSTRING(Fj, "--"),
+				  RSTRING(Fk, "--")]);
+
+	STRUCT (t_reg_write, [RSTRING(Fi, "--"),
+				   RINT(data, 0)]);
+
+	STRUCT (t_reg_value, [RINT(value, 0)]);
+
+	STRUCT (t_set_Qi, [RSTRING(Dest, "--"),
+				RINT (Qi, 0)]);
+
+	STRUCT (t_set_Qj_Qk, [RSTRING(Src1, "--"),
+				RSTRING(Src2, "--"),
+				RINT (Qi, 0)]);
+
+
+-- definition of data packets
+
+	STRUCT (t_data,    [RINT(word0, 0),
+				RINT(word1, 0)]);
+
+	STRUCT (t_mem_data_reg,    [RINT(Q, 0),
+				RINT(data, 0)]);
+
+	STRUCT (t_unit_data_reg,    [RINT(valid, 0),
+				RINT(data, 0)]);
+
+	STRUCT(t_confs, [RSTRING (j, "__"),
+			 RSTRING (k, "__")]);
+
+
+-- definition of links connecting to memory
+
+	LINK(l_mem,[
+		      (MEM_I_ACCESS,RSTRUCT(t_mem_i_access,DP)),
+		      (MEM_D_ACCESS,RSTRUCT(t_mem_d_access,DP)),
+		      (MEM_INSTR,RSTRUCT(t_6600_instrn,DP)),
+		      (MEM_DATA,RSTRUCT(t_mem_data_reg,DP))]);
+
+	LINK(l_instr, [(INSTRN, RSTRUCT(t_Instrn,DP)),
+				(D_INSTRN, RSTRUCT(t_Dinstrn,DP))]);
+
+	LINK(l_control, [(SET_QI, RSTRUCT(t_set_Qi,DP)),
+				(SET_QJ_QK, RSTRUCT(t_set_Qj_Qk,DP)),
+				(SET_READY, RINT(ready,0)),
+				(BRANCH_TARGET, RINT(K,0)),
+				(REQUEST_RELEASE, RINT(unit_no,0)),
+				(GO_STORE, RINT(go_store, 1))]);
+
+-- definition of links connecting to/from registers
+
+	LINK(l_reg, [(SET_DEST_REG_QI,RSTRUCT(t_set_Qi,DP)),
+		      (Q_VALUES, RSTRUCT(t_data,DP)),
+		      (REG_READ, RSTRUCT(t_reg_read,DP)),
+		      (R_VALUES, RSTRUCT(t_data,DP)),
+			(RELEASE, RINT(Q,0)),
+		      (REG_WRITE, RSTRUCT(t_reg_write,DP))]);
+
+-- definition of branch instruction links
+
+	LINK(l_branch, [(TEST_RESULT,RINT(test_result,0)),
+				(BRANCH_RESULT, RSTRUCT(t_data, DP))]);
+
+
+)
+	GLOBALS (
+			RINT (Program, 1);
+			RINT (Max_Time_Left, 20000);
+	)
+	ENTITYLIB (
+
+		ABSTRACT Biclocked sync ( )
+		ENTITY Clock sync ( )
+		ENTITY Clockphase sync ( )
+
+	ENTITY programs (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Program and Data Inputs")
+		PARAMS (
+			RARRAY ( instr_mem_array, i_mem, 65536);
+			RARRAY ( data_mem_array, d_mem, 65536);
+		)	
+	  	PORTS (
+			PORT(prog_output,l_instr,SOURCE);
+			PORT(data_output,l_mem,SOURCE);
+		)
+	);
+	ENTITY memory (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Central Storage")
+		STATES (M_IDLE, M_BUSY)
+		PARAMS (
+			RINT (I_Mem_Size, 65536);
+			RINT (D_Mem_Size, 65536);
+			RARRAY ( instr_mem_array, i_mem, I_Mem_Size);
+			RARRAY ( data_mem_array, d_mem, D_Mem_Size);
+		)
+	  	PORTS (
+			PORT(prog_input,l_instr,DESTINATION);
+			PORT(data_input,l_mem,DESTINATION);
+			PORT(from_istack,l_mem,DESTINATION);
+			PORT(to_istack,l_instr,SOURCE);
+			PORT(to_d_regs,l_mem,SOURCE);
+			PORT(from_xba_regs,l_mem,DESTINATION);
+		  )
+	);
+	ENTITY istack (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Instruction Stack")
+		STATES (IS_IDLE, IS_BUSY, IS_HELD)
+		PARAMS (
+			RARRAY ( instr_stack_array, instr_stack, 8);
+			RSTRUCT (t_Dinstrn_reg, U0_1);
+			RSTRUCT (t_dbl_reg0, D_L);
+			RINT(PA,0);
+		 )
+		PORTS (
+			 PORT(to_memory, l_mem, SOURCE);
+			 PORT(from_memory ,l_instr, DESTINATION);
+			 PORT(to_scboard, l_instr, SOURCE);
+			 PORT(from_scboard, l_control, DESTINATION);
+			 PORT(to_xba_regs, l_control, SOURCE);
+			PORT(from_branch, l_branch, DESTINATION);
+		)
+	);
+	ENTITY scoreboard (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Scoreboard")
+		STATES(S_IDLE, S_BUSY, S_HELD)
+		PARAMS (
+			RSTRUCT (t_6600_instrn, U2);
+			RSTRUCT(t_assem, U2a);
+			 RSTRING (CONF1, "____");
+			)
+		PORTS (
+			PORT(from_istack ,l_instr,DESTINATION);
+			PORT(to_istack ,l_control,SOURCE);
+			PORT(to_xba_regs,l_reg,SOURCE);
+			XPORT(11, to_unit, l_control, SOURCE);
+			PORT(to_branch, l_control, SOURCE);
+			PORT(from_unit0, l_control, DESTINATION);			-- ADD
+			PORT(from_unit1, l_control, DESTINATION);			-- MUL1
+			PORT(from_unit2, l_control, DESTINATION);			-- MUL2
+			PORT(from_unit3, l_control, DESTINATION);			-- DIV
+			PORT(from_unit4, l_control, DESTINATION);			-- FX_ADD
+			PORT(from_unit5, l_control, DESTINATION);			-- INC1
+			PORT(from_unit6, l_control, DESTINATION);			-- INC2
+			PORT(from_unit7, l_control, DESTINATION);			-- BOOLEAN
+			PORT(from_unit8, l_control, DESTINATION);			-- SHIFT
+			PORT(from_unit10, l_control, DESTINATION);			-- D_REGS
+			 )
+	);
+
+	ENTITY d_registers (
+		DESCRIPTION ("D Registers")
+		STATES (D_REGS_IDLE, D_REGS_BUSY,  D_REGS_HELD)
+		PARAMS ( 
+			RARRAY ( prog_reg_set, Dreg, 5);
+			 RSTRING (CONF3, "__");
+			)
+	  	PORTS (
+			PORT(from_memory,l_mem,DESTINATION);
+			PORT(data_out,l_mem,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+	 		 )
+	);
+	ENTITY xba_registers (
+		DESCRIPTION ("XBA Registers")
+		STATES (XBA_REGS_IDLE, XBA_REGS_WRITE, XBA_REGS_READ)
+		PARAMS ( 
+			RARRAY ( prog_reg_set, Xreg, 8);
+			RARRAY ( prog_reg_set, Areg, 8);
+			RARRAY ( prog_reg_set, Breg, 8);
+			)
+	  	PORTS (
+			 PORT(from_istack,l_control,DESTINATION);
+			PORT(from_scboard,l_reg,DESTINATION);
+			PORT(from_d_regs,l_mem,DESTINATION);
+			PORT(to_memory,l_mem,SOURCE);
+			XPORT(9, to_unit, l_reg, SOURCE);
+			XPORT(9, from_unit, l_reg, DESTINATION);
+	 		 )
+	);
+
+	ENTITY addU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Add")
+		STATES (ADD_IDLE, ADD_BUSY, ADD_HELD)
+		PARAMS (
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+			 )
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+			)
+	);
+
+	ENTITY mulU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Multiply")
+		STATES (MUL_IDLE, MUL_BUSY, MUL_HELD)
+		PARAMS ( 
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				)
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+			)
+	);
+	ENTITY divU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Divide")
+		STATES (DIV_IDLE, DIV_BUSY, DIV_HELD)
+		PARAMS (
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				 )
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+		)
+	);
+	ENTITY fx_addU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Fixed Add")
+		STATES (FX_ADD_IDLE, FX_ADD_BUSY, FX_ADD_HELD)
+		PARAMS (
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				 )
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+			PORT(to_branch, l_branch, SOURCE);
+		)
+	);
+
+	ENTITY incU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Increment")
+		STATES (INC_IDLE, INC_BUSY, INC_HELD)
+		PARAMS (	
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				 )
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+			PORT(to_branch, l_branch, SOURCE);
+		)
+	);
+
+	ENTITY boolU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Boolean")
+		STATES (BOOL_IDLE, BOOL_BUSY, BOOL_HELD)
+		PARAMS ( 
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				)
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+		)
+	);
+
+	ENTITY shiftU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Shift")
+		STATES (SHIFT_IDLE, SHIFT_BUSY, SHIFT_HELD)
+		PARAMS (
+			RSTRUCT (t_identifiers, IDENTS);
+			RSTRUCT (t_confs, CONF2);
+			RINT (DATA1, 0);
+			RINT (DATA2, 0);
+			RINT (RESULT, 0);
+			 RSTRING (CONF3, "__");
+				 )
+		PORTS (
+			 PORT(data_in,l_reg,DESTINATION);
+			 PORT(data_out, l_reg,SOURCE);
+			PORT(control_in, l_control, DESTINATION);
+			PORT(control_out, l_control, SOURCE);
+		)
+	);
+	ENTITY branchU (
+		EXTENDS (Biclocked)
+		DESCRIPTION("Branch")
+		STATES (BRANCH_IDLE, BRANCH_BUSY, BRANCH_HELD)
+		PARAMS ( 
+					RSTRING (IDENTm, "--");
+					RINT (BRANCH_TO, 0);
+				)
+		PORTS (
+		 PORT(data_in1,l_branch,DESTINATION);
+		 PORT(data_in2,l_branch,DESTINATION);
+		 PORT(data_in3,l_branch,DESTINATION);
+		 PORT(output, l_branch,SOURCE);
+		)
+	);
+
+	)
+	STRUCTURE(
+-- List of entity instances in top-level model
+
+		AENTITY programs PROGRAMS (
+			DESCRIPTION("Program and Data Inputs")
+		);
+		AENTITY memory CENTRAL_STORAGE (
+			DESCRIPTION("central storage")
+		);
+		AENTITY istack I_STACK (
+			DESCRIPTION("Instruction Stack")
+		);
+		AENTITY scoreboard SCOREBOARD (
+			DESCRIPTION("Scoreboard")
+		);
+		AENTITY d_registers D_REGS (
+			DESCRIPTION("D registers")
+		);
+		AENTITY xba_registers XBA_REGS (
+			DESCRIPTION("XBA registers")
+			ATTRIB (XPORT (from_unit, 10)
+					XPORT (to_unit, 10) )
+		);
+		AENTITY addU ADD (
+			DESCRIPTION("Add")
+		);
+		AENTITY mulU MUL1 (
+			DESCRIPTION("Multiply 1")
+		);
+		AENTITY mulU MUL2 (
+			DESCRIPTION("Multiply 2")
+		);
+		AENTITY divU DIV (
+			DESCRIPTION("Divide")
+		);
+		AENTITY fx_addU FX_ADD (
+			DESCRIPTION("Fixed Add")
+		);
+		AENTITY incU INC1 (
+			DESCRIPTION("Increment 1")
+		);
+		AENTITY incU INC2 (
+			DESCRIPTION("Increment 2")
+		);
+		AENTITY boolU BOOLEAN (
+			DESCRIPTION("Boolean")
+		);
+		AENTITY shiftU SHIFT (
+			DESCRIPTION("Shift")
+		);
+		AENTITY branchU BRANCH (
+			DESCRIPTION("Branch")
+		);
+	
+		AENTITY Clock CLOCK ( DESCRIPTION ("Clock"));
+		AENTITY Clockphase CPHASE (DESCRIPTION ("Clock display"));
+
+		CLINK(programs.PROGRAMS[prog_output]->memory.CENTRAL_STORAGE[prog_input],1);
+		CLINK(programs.PROGRAMS[data_output]->memory.CENTRAL_STORAGE[data_input],1);
+		CLINK(istack.I_STACK[to_memory]->memory.CENTRAL_STORAGE[from_istack],1);
+		CLINK(memory.CENTRAL_STORAGE[to_istack]->istack.I_STACK[from_memory],1);
+		CLINK(memory.CENTRAL_STORAGE[to_d_regs]->d_registers.D_REGS[from_memory],1);
+		CLINK(istack.I_STACK[to_scboard]->scoreboard.SCOREBOARD[from_istack],1);
+		CLINK(istack.I_STACK[to_xba_regs]->xba_registers.XBA_REGS[from_istack],0);
+		CLINK(scoreboard.SCOREBOARD[to_xba_regs]->xba_registers.XBA_REGS[from_scboard],1);
+		CLINK(scoreboard.SCOREBOARD[to_istack]->istack.I_STACK[from_scboard],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit0]->addU.ADD[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit1]->mulU.MUL1[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit2]->mulU.MUL2[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit3]->divU.DIV[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit4]->fx_addU.FX_ADD[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit5]->incU.INC1[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit6]->incU.INC2[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit7]->boolU.BOOLEAN[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit8]->shiftU.SHIFT[control_in],0);
+		CLINK(scoreboard.SCOREBOARD[to_unit10]->d_registers.D_REGS[control_in],0);
+
+		CLINK(xba_registers.XBA_REGS[to_memory]->memory.CENTRAL_STORAGE[from_xba_regs],1);
+		CLINK(xba_registers.XBA_REGS[to_unit0]->addU.ADD[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit1]->mulU.MUL1[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit2]->mulU.MUL2[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit3]->divU.DIV[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit4]->fx_addU.FX_ADD[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit5]->incU.INC1[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit6]->incU.INC2[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit7]->boolU.BOOLEAN[data_in],1);
+		CLINK(xba_registers.XBA_REGS[to_unit8]->shiftU.SHIFT[data_in],1);
+
+		CLINK(addU.ADD[data_out]->xba_registers.XBA_REGS[from_unit0],1);
+		CLINK(addU.ADD[control_out]->scoreboard.SCOREBOARD[from_unit0],0);
+		CLINK(mulU.MUL1[data_out]->xba_registers.XBA_REGS[from_unit1],1);
+		CLINK(mulU.MUL1[control_out]->scoreboard.SCOREBOARD[from_unit1],0);
+		CLINK(mulU.MUL2[data_out]->xba_registers.XBA_REGS[from_unit2],1);
+		CLINK(mulU.MUL2[control_out]->scoreboard.SCOREBOARD[from_unit2],0);
+		CLINK(divU.DIV[data_out]->xba_registers.XBA_REGS[from_unit3],1);
+		CLINK(divU.DIV[control_out]->scoreboard.SCOREBOARD[from_unit3],0);
+		CLINK(fx_addU.FX_ADD[data_out]->xba_registers.XBA_REGS[from_unit4],1);
+		CLINK(fx_addU.FX_ADD[control_out]->scoreboard.SCOREBOARD[from_unit4],0);
+		CLINK(fx_addU.FX_ADD[to_branch]->branchU.BRANCH[data_in3],1);
+		CLINK(incU.INC1[data_out]->xba_registers.XBA_REGS[from_unit5],1);
+		CLINK(incU.INC1[control_out]->scoreboard.SCOREBOARD[from_unit5],0);
+		CLINK(incU.INC1[to_branch]->branchU.BRANCH[data_in1],1);
+		CLINK(incU.INC2[data_out]->xba_registers.XBA_REGS[from_unit6],1);
+		CLINK(incU.INC2[control_out]->scoreboard.SCOREBOARD[from_unit6],0);
+		CLINK(incU.INC2[to_branch]->branchU.BRANCH[data_in2],1);
+		CLINK(boolU.BOOLEAN[data_out]->xba_registers.XBA_REGS[from_unit7],1);
+		CLINK(boolU.BOOLEAN[control_out]->scoreboard.SCOREBOARD[from_unit7],0);
+		CLINK(shiftU.SHIFT[data_out]->xba_registers.XBA_REGS[from_unit8],1);
+		CLINK(shiftU.SHIFT[control_out]->scoreboard.SCOREBOARD[from_unit8],0);
+		CLINK(d_registers.D_REGS[data_out]->xba_registers.XBA_REGS[from_d_regs],1);
+		CLINK(d_registers.D_REGS[control_out]->scoreboard.SCOREBOARD[from_unit10],0);
+		CLINK(branchU.BRANCH[output]->istack.I_STACK[from_branch],1);
+	)
+)
